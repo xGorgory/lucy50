@@ -243,19 +243,17 @@
 
   .scroll-cue{
     position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));z-index:40;
-    display:flex;flex-direction:column;align-items:center;gap:6px;
-    border:0;cursor:pointer;font:inherit;font-weight:700;font-size:.95rem;color:#fff;
-    padding:12px 22px 10px;border-radius:999px;
+    width:52px;height:52px;display:grid;place-items:center;
+    border:0;cursor:pointer;color:#fff;padding:0;border-radius:50%;
     background:linear-gradient(120deg,var(--lavanda-2),#f2a7c3);
     box-shadow:0 14px 30px -10px rgba(185,162,232,.95);
     opacity:0;pointer-events:none;transform:translate(-50%,40px) scale(.8);
     transition:opacity .5s ease, transform .6s cubic-bezier(.2,1.5,.4,1);
   }
   .scroll-cue.show{opacity:1;pointer-events:auto;transform:translate(-50%,0) scale(1);animation:nudge 1.6s ease-in-out .6s infinite}
-  .scroll-cue .arrows{display:flex;flex-direction:column;align-items:center;line-height:.55;font-size:1.1rem}
-  .scroll-cue .arrows i{font-style:normal;animation:arrowFade 1.4s ease-in-out infinite}
-  .scroll-cue .arrows i:nth-child(2){animation-delay:.2s}
-  .scroll-cue::before{content:"";position:absolute;inset:-6px;border-radius:999px;border:3px solid #f2a7c3;opacity:0;animation:ringOut 1.8s ease-out infinite}
+  .scroll-cue svg{margin-top:4px}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .scroll-cue::before{content:"";position:absolute;inset:-6px;border-radius:50%;border:3px solid #f2a7c3;opacity:0;animation:ringOut 1.8s ease-out infinite}
   @keyframes nudge{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-10px)}}
   @keyframes arrowFade{0%,100%{opacity:.3;transform:translateY(-2px)}50%{opacity:1;transform:translateY(3px)}}
   @keyframes ringOut{0%{opacity:.7;transform:scale(.95)}100%{opacity:0;transform:scale(1.25)}}
@@ -393,9 +391,11 @@
       </div>
       <button class="replay" id="replay">↺ Ver el viaje otra vez</button>
     </div>
-    <button class="scroll-cue" id="scrollCue" aria-label="Ver la invitación">
-      ¡Llegamos! Desliza para ver tu sorpresa
-      <span class="arrows"><i>⌄</i><i>⌄</i></span>
+    <button class="scroll-cue" id="scrollCue" aria-label="Sigue deslizando">
+      <span id="cueText" class="sr-only">Sigue deslizando</span>
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+        <path d="M6 9l6 6 6-6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
     </button>
   </section>
 
@@ -619,6 +619,7 @@ function resetTrip(){
 function runTrip(){
   if(tripRunning) return;
   tripRunning = true; resetTrip();
+  if(typeof updateCue === 'function') updateCue();
   setTimeout(() => pinA.classList.add('on'), 150);
   const dur = 6000; let start = null;
   setTimeout(() => requestAnimationFrame(function step(ts){
@@ -640,18 +641,31 @@ placeBus(0);
 replayBtn.addEventListener('click', () => { hideCue(); runTrip(); });
 
 /* ---------- Señal para seguir bajando ---------- */
+// Siempre visible mientras haya más contenido abajo; solo se oculta al llegar al final.
 const cue = document.getElementById('scrollCue');
-let cueUsed = false;
-function showCue(){ if(!cueUsed) cue.classList.add('show'); }
-function hideCue(){ cue.classList.remove('show'); }
+const cueText = document.getElementById('cueText');
+const invit = document.getElementById('invitacion');
+const sections = [...document.querySelectorAll('main section, main footer')];
+function updateCue(){
+  if(!document.body.classList.contains('ready')){ cue.classList.remove('show'); return; }
+  // Se oculta al llegar a la maleta para no tapar el botón "¡Acepto el viaje!"
+  const nearEnd = document.getElementById('maleta').getBoundingClientRect().top < innerHeight * 0.55;
+  cue.classList.toggle('show', !nearEnd);
+  const onMap = invit.getBoundingClientRect().top > innerHeight * 0.45;
+  cueText.textContent = (onMap && tripDone && !tripRunning)
+    ? '¡Llegamos! Desliza para ver tu sorpresa'
+    : 'Sigue deslizando';
+}
+function showCue(){ updateCue(); }
+function hideCue(){ updateCue(); }
+addEventListener('scroll', updateCue, { passive:true });
+addEventListener('resize', updateCue);
+new MutationObserver(updateCue).observe(document.body, { attributes:true, attributeFilter:['class'] });
 cue.addEventListener('click', () => {
-  cueUsed = true; hideCue();
-  document.getElementById('invitacion').scrollIntoView({ behavior:'smooth' });
+  // Va a la siguiente sección que esté por debajo de la pantalla actual
+  const next = sections.find(s => s.getBoundingClientRect().top > 40);
+  (next || invit).scrollIntoView({ behavior:'smooth' });
 });
-// Se oculta sola cuando ella empieza a bajar
-new IntersectionObserver(([en]) => {
-  if(en.isIntersecting && en.intersectionRatio > .25){ cueUsed = true; hideCue(); }
-}, { threshold: [0, .25, .5] }).observe(document.getElementById('invitacion'));
 new IntersectionObserver(([en]) => {
   if(en.isIntersecting && !tripDone && document.body.classList.contains('ready')) runTrip();
 }, { threshold: .55 }).observe(document.getElementById('map'));
